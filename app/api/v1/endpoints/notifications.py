@@ -18,6 +18,7 @@ from app.schemas.notification import (
     Recipient,
     Meta,
 )
+from app.schemas.response import APIResponse, PaginationMeta
 
 # Service imports
 from app.services.idempotency_service import idempotency_service
