@@ -1,6 +1,5 @@
 from datetime import datetime
 from typing import Optional, Dict, Any
-from uuid import UUID
 from enum import Enum
 
 from pydantic import BaseModel, EmailStr, Field
@@ -9,16 +8,16 @@ from pydantic import BaseModel, EmailStr, Field
 class NotificationType(str, Enum):
     """Defines the allowed notification channels."""
 
-    email = "email"
-    push = "push"
+    EMAIL = "email"
+    PUSH = "push"
 
 
 class Priority(str, Enum):
     """Defines notification priority levels."""
 
-    low = "low"
-    normal = "normal"
-    high = "high"
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
 
 
 class Recipient(BaseModel):
@@ -37,21 +36,21 @@ class Meta(BaseModel):
     """Metadata for the notification."""
 
     priority: Priority = Field(
-        default=Priority.normal, description="Priority level of the notification"
+        default=Priority.NORMAL, description="Priority level of the notification"
     )
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Timestamp of the request"
+    timestamp: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp of the request (auto-generated if not provided)",
     )
 
 
 class NotificationRequest(BaseModel):
-    """Schema for POST /api/v1/notifications/ incoming request."""
+    """
+    Schema for POST /api/v1/notifications/ incoming request.
+    CLIENT ONLY provides: notification_type, template_id, recipient, variables, meta (optional)
+    SERVER generates: request_id, correlation_id, notification_id
+    """
 
-    request_id: str = Field(..., description="Unique ID for idempotency")
-    correlation_id: str = Field(..., description="ID for distributed tracing")
-    notification_id: str = Field(
-        ..., description="Unique identifier for this notification"
-    )
     notification_type: NotificationType = Field(
         ..., description="Channel for notification (email or push)"
     )
@@ -60,36 +59,38 @@ class NotificationRequest(BaseModel):
     variables: Dict[str, Any] = Field(
         default_factory=dict, description="Variables for template substitution"
     )
-    meta: Meta = Field(
-        default_factory=Meta, description="Metadata including priority and timestamp"
+    meta: Optional[Meta] = Field(
+        default=None, description="Metadata including priority and timestamp"
     )
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "request_id": "req_12345",
-                "correlation_id": "corr_abcde",
-                "notification_id": "notif_98765",
                 "notification_type": "email",
-                "template_id": "tpl_welcome_v2",
-                "recipient": {
-                    "user_id": "user_42",
-                    "email": "user@example.com",
-                    "push_token": "fcm_token_...",
+                "template_id": "welcome_email",
+                "recipient": {"user_id": "user_123", "email": "test@example.com"},
+                "variables": {
+                    "name": "John Doe",
+                    "activation_link": "https://example.com/activate/xyz",
                 },
-                "variables": {"name": "Gerard", "account_link": "https://..."},
-                "meta": {"priority": "normal", "timestamp": "2025-11-10T12:34:56Z"},
+                "meta": {"priority": "normal"},
             }
         }
     }
 
 
 class QueueMessagePayload(BaseModel):
-    """Schema for the message published to RabbitMQ/Kafka."""
+    """
+    Schema for the message published to RabbitMQ.
+    This includes BOTH client data AND server-generated fields.
+    """
 
+    # Server-generated fields
     request_id: str
     correlation_id: str
     notification_id: str
+
+    # Client-provided fields
     notification_type: NotificationType
     template_id: str
     recipient: Recipient
