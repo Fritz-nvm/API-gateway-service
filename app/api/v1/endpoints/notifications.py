@@ -61,40 +61,53 @@ async def send_notification(
         # Get existing notification data
         existing_status = await status_service.get_status(existing_id)
 
-        return APIResponse(
-            success=True,
-            message="Notification already accepted",
-            data=NotificationResponse(
-                request_id=idempotency_key,
-                notification_id=existing_id,
-                status="queued",
-                notification_type=body.notification_type,
-                created_at=datetime.utcnow(),
-                message="Notification already queued",
-            ),
-        )
+        if existing_status:
+            return APIResponse(
+                success=True,
+                message="Notification already accepted",
+                data=NotificationResponse(
+                    request_id=existing_status.get("request_id", idempotency_key),
+                    notification_id=existing_id,
+                    status=existing_status.get("status", "queued"),
+                    notification_type=body.notification_type,
+                    created_at=datetime.fromisoformat(
+                        existing_status.get("created_at", datetime.utcnow().isoformat())
+                    ),
+                    message="Notification already queued",
+                ),
+            )
 
     # Generate server-side IDs
     notification_id = str(uuid.uuid4())
     request_id = idempotency_key  # Use idempotency key as request_id
     correlation_id = str(uuid.uuid4())  # Generate correlation ID for tracing
+    created_at = datetime.utcnow()
 
     # Ensure meta is set with defaults
     if body.meta is None:
-        body.meta = Meta(priority=Priority.NORMAL, timestamp=datetime.utcnow())
+        body.meta = Meta(priority=Priority.NORMAL, timestamp=created_at)
     elif body.meta.timestamp is None:
-        body.meta.timestamp = datetime.utcnow()
+        body.meta.timestamp = created_at
 
-    # Set initial status
-    await status_service.update_status(notification_id, "pending")
-
-    # Lock idempotency key
+    # Lock idempotency key FIRST
     if not await status_service.set_idempotency_key(idempotency_key, notification_id):
         existing_id = await status_service.check_idempotency_key(idempotency_key)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Idempotency key conflict. Notification ID: {existing_id}",
         )
+
+    # Set initial status
+    status_data = {
+        "notification_id": notification_id,
+        "request_id": request_id,
+        "status": "queued",
+        "notification_type": body.notification_type.value,
+        "created_at": created_at.isoformat(),
+        "updated_at": created_at.isoformat(),
+    }
+
+    await status_service.set_initial_status(status_data)
 
     # Publish to queue
     try:
@@ -107,15 +120,13 @@ async def send_notification(
     except Exception as e:
         logger.error(f"❌ Failed to publish message: {e}")
 
-        # Cleanup on failure
-        await status_service.update_status(notification_id, "failed")
+        # Update status to failed
+        await status_service.update_status(notification_id, "failed", str(e))
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Notification service temporarily unavailable",
         )
-
-    created_at = datetime.utcnow()
 
     return APIResponse(
         success=True,
@@ -155,9 +166,5 @@ async def get_notification_status(notification_id: str):
     return APIResponse(
         success=True,
         message="Status retrieved successfully",
-        data=(
-            status_data
-            if isinstance(status_data, dict)
-            else status_data.model_dump(exclude_none=True)
-        ),
+        data=status_data,
     )

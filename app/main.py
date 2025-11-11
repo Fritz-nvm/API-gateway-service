@@ -1,10 +1,16 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.events import startup_handler, shutdown_handler
-from app.core.exceptions import register_exception_handlers
 from app.api.v1.router import api_router
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # --- App Initialization ---
 app = FastAPI(
@@ -25,12 +31,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Event Handlers
-app.add_event_handler("startup", startup_handler)
-app.add_event_handler("shutdown", shutdown_handler)
 
-# Exception Handlers
-register_exception_handlers(app)
+# ⚠️ CRITICAL: Register event handlers
+@app.on_event("startup")
+async def on_startup():
+    """Startup event handler."""
+    logger.info("🔥 FastAPI startup event triggered")
+    await startup_handler()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """Shutdown event handler."""
+    logger.info("🔥 FastAPI shutdown event triggered")
+    await shutdown_handler()
+
 
 # API Routes
 app.include_router(api_router, prefix="/api/v1")
