@@ -1,0 +1,110 @@
+version: "3.8"
+
+services:
+  # --- 1. Redis Service (for Idempotency and Status Tracking) ---
+  redis:
+    image: redis:7-alpine
+    container_name: api_gateway_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - api_gateway_network
+
+  # --- 2. RabbitMQ Service (for Asynchronous Message Queues) ---
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: api_gateway_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${QUEUE_PORT:-5672}:5672" # AMQP Protocol
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${QUEUE_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${QUEUE_PASSWORD:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - api_gateway_network
+
+  # --- 3. API Gateway Service ---
+  api_gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api_gateway_service
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Core Application
+      PROJECT_NAME: ${PROJECT_NAME:-API Gateway Service}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-True}
+      VERSION: ${VERSION:-1.0.0}
+      HOST: 0.0.0.0
+      PORT: 8000
+
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+
+      # Downstream Services
+      USER_SERVICE_URL: ${USER_SERVICE_URL}
+      TEMPLATE_SERVICE_URL: ${TEMPLATE_SERVICE_URL}
+
+      # Message Queue (RabbitMQ)
+      QUEUE_HOST: rabbitmq
+      QUEUE_PORT: 5672
+      QUEUE_USERNAME: ${QUEUE_USERNAME:-guest}
+      QUEUE_PASSWORD: ${QUEUE_PASSWORD:-guest}
+      EMAIL_QUEUE_NAME: ${EMAIL_QUEUE_NAME:-email.queue}
+      PUSH_QUEUE_NAME: ${PUSH_QUEUE_NAME:-push.queue}
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # Rate Limiting
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+
+      # Idempotency
+      IDEMPOTENCY_WINDOW_SECONDS: ${IDEMPOTENCY_WINDOW_SECONDS:-300}
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+    networks:
+      - api_gateway_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# --- Networks ---
+networks:
+  api_gateway_network:
+    driver: bridge
+
+# --- Volumes ---
+volumes:
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local

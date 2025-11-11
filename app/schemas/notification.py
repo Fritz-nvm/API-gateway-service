@@ -37,7 +37,7 @@ class Meta(BaseModel):
     """Metadata for the notification."""
 
     priority: Priority = Field(
-        default=Priority.NORMAL, description="Priority level of the notification"
+        default=Priority.normal, description="Priority level of the notification"
     )
     timestamp: datetime = Field(
         default_factory=datetime.utcnow, description="Timestamp of the request"

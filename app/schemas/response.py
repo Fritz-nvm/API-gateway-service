@@ -6,12 +6,29 @@ DataT = TypeVar("DataT")
 
 
 class PaginationMeta(BaseModel):
-    """Metadata structure used in the standardized APIResponse."""
+    """
+    Metadata structure used in the standardized APIResponse,
+    now including all required fields per specification.
+    """
 
     total: int
+    limit: int = 1  # Defaulting to 1 for non-paginated endpoints
+    page: int = 1  # Defaulting to 1
+    total_pages: int = 1  # Defaulting to 1
+    has_next: bool = False
+    has_previous: bool = False
 
     class Config:
-        json_schema_extra = {"example": {"total": 1}}
+        json_schema_extra = {
+            "example": {
+                "total": 1,
+                "limit": 10,
+                "page": 1,
+                "total_pages": 1,
+                "has_next": False,
+                "has_previous": False,
+            }
+        }
 
 
 class APIResponse(BaseModel, Generic[DataT]):
