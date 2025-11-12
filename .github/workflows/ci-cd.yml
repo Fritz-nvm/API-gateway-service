@@ -199,9 +199,17 @@ jobs:
     if: github.event_name != 'pull_request'
 
     permissions:
+      contents: read
       security-events: write
 
     steps:
+      - name: 🔑 Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 🛡️ Run Trivy on Docker image
         uses: aquasecurity/trivy-action@master
         with:
