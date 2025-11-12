@@ -1,4 +1,3 @@
-
 # Core FastAPI
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
@@ -20,11 +19,17 @@ redis==5.0.1
 # RabbitMQ
 aio-pika==9.3.1
 
-# Testing (optional, not needed in Docker)
+# Circuit Breaker
+pybreaker==0.7.0
+
+# Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
 pytest-mock==3.12.0
 
-# Circuit Breaker
-pybreaker==0.7.0
+# Code Quality (dev dependencies)
+black==23.11.0
+flake8==6.1.0
+isort==5.12.0
+mypy==1.7.0

@@ -1,6 +1,7 @@
 import logging
 import aio_pika
 import asyncio
+from urllib.parse import urlparse
 
 from app.core.config import settings
 from app.services.status_service import status_service
@@ -14,6 +15,24 @@ _RABBITMQ_CHANNEL = None
 _NOTIFICATION_EXCHANGE = None
 
 
+async def _wait_for_tcp(
+    host: str, port: int, timeout: float = 1.0, retries: int = 30
+) -> bool:
+    """Wait for a TCP port to become available."""
+    for _ in range(retries):
+        try:
+            reader, writer = await asyncio.open_connection(host, port)
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            await asyncio.sleep(timeout)
+    return False
+
+
 async def startup_handler():
     """Initialize external connections on startup."""
     global _RABBITMQ_CONNECTION, _RABBITMQ_CHANNEL, _NOTIFICATION_EXCHANGE
@@ -22,12 +41,29 @@ async def startup_handler():
 
     # Initialize Redis
     try:
-        status_service.initialize_client()
-        await status_service.get_client().ping()
+        init_result = status_service.initialize_client()
+        if asyncio.iscoroutine(init_result):
+            await init_result
+        ping_result = status_service.get_client().ping()
+        if asyncio.iscoroutine(ping_result):
+            await ping_result
         logger.info("✅ Redis connected")
     except Exception as e:
         logger.error(f"❌ Redis connection failed: {e}")
         raise  # Fail startup if Redis unavailable
+
+    # Parse RabbitMQ host/port and wait for TCP before attempting AMQP connect
+    try:
+        parsed = urlparse(settings.QUEUE_URL)
+        rabbit_host = parsed.hostname or "rabbitmq"
+        rabbit_port = int(parsed.port or 5672)
+    except Exception:
+        rabbit_host, rabbit_port = "rabbitmq", 5672
+
+    logger.info(
+        f"⏳ Waiting for RabbitMQ TCP {rabbit_host}:{rabbit_port} to be available..."
+    )
+    await _wait_for_tcp(rabbit_host, rabbit_port, timeout=1.0, retries=30)
 
     # Initialize RabbitMQ with retry logic
     max_retries = 5
@@ -122,7 +158,9 @@ async def shutdown_handler():
             logger.error(f"⚠️ Error closing RabbitMQ: {e}")
 
     try:
-        await status_service.close()
+        close_result = status_service.close()
+        if asyncio.iscoroutine(close_result):
+            await close_result
         logger.info("✅ Redis connection closed")
     except Exception as e:
         logger.error(f"⚠️ Redis close error: {e}")
