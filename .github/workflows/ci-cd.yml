@@ -201,16 +201,18 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      packages: read
 
     steps:
       - name: 🛡️ Run Trivy on Docker image
         uses: aquasecurity/trivy-action@master
         with:
+          scan-type: "image"
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: "sarif"
           output: "trivy-image-results.sarif"
           # FIX: Use the dedicated input for GHCR authentication
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-pat: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📊 Upload Results
         uses: github/codeql-action/upload-sarif@v3
