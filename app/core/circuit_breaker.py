@@ -1,16 +1,13 @@
 import pybreaker
 from app.core.config import settings
 import logging
-from typing import Optional, Callable, Any
+from typing import Callable
 from functools import wraps
-import asyncio
 
-# Set up logging for the breaker events
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# --- Circuit Breaker Listener ---
 class BreakerListener(pybreaker.CircuitBreakerListener):
     """Logs circuit breaker state changes."""
 
@@ -23,27 +20,15 @@ class BreakerListener(pybreaker.CircuitBreakerListener):
             f"(Reset in {breaker.reset_timeout}s)"
         )
 
-    def before_call(
-        self, breaker: pybreaker.CircuitBreaker, func: Callable, *args, **kwargs
-    ):
-        """Called before each protected call."""
-        logger.debug(f"🔍 Circuit breaker '{breaker.name}' calling {func.__name__}")
-
     def failure(self, breaker: pybreaker.CircuitBreaker, exception: Exception):
-        """Called when a protected call fails."""
-        logger.error(
-            f"❌ Circuit breaker '{breaker.name}' failure: {exception} "
-            f"(Failures: {breaker.fail_counter}/{breaker.fail_max})"
-        )
+        logger.error(f"❌ Circuit breaker '{breaker.name}' failure: {exception}")
 
     def success(self, breaker: pybreaker.CircuitBreaker):
-        """Called when a protected call succeeds."""
         logger.debug(f"✅ Circuit breaker '{breaker.name}' call succeeded")
 
 
 # --- Global Circuit Breaker Instances ---
 
-# User/Template Service Breaker (for external HTTP calls)
 user_service_breaker = pybreaker.CircuitBreaker(
     fail_max=getattr(settings, "CIRCUIT_BREAKER_MAX_FAILURES", 5),
     reset_timeout=getattr(settings, "CIRCUIT_BREAKER_RESET_TIMEOUT", 30),
@@ -51,68 +36,33 @@ user_service_breaker = pybreaker.CircuitBreaker(
     listeners=[BreakerListener()],
 )
 
-# RabbitMQ Breaker (for queue publishing)
 rabbitmq_breaker = pybreaker.CircuitBreaker(
-    fail_max=3,  # Fail faster for queue issues
+    fail_max=3,
     reset_timeout=30,
     name="RabbitMQ",
     listeners=[BreakerListener()],
 )
 
-# Redis Breaker (for cache operations)
 redis_breaker = pybreaker.CircuitBreaker(
     fail_max=5,
-    reset_timeout=20,  # Shorter timeout for cache
+    reset_timeout=20,
     name="Redis",
     listeners=[BreakerListener()],
 )
 
 
-# --- Async Circuit Breaker Wrapper ---
+# --- Async Circuit Breaker Decorator ---
 def async_circuit_breaker(breaker: pybreaker.CircuitBreaker):
     """
-    Decorator to apply circuit breaker pattern to async functions.
-
-    Usage:
-        @async_circuit_breaker(user_service_breaker)
-        async def fetch_user_preferences(user_id: str):
-            ...
+    Decorator for async functions that uses pybreaker.
+    Properly wraps async calls for circuit breaker protection.
     """
 
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            try:
-                # Check circuit state before calling
-                if breaker.current_state == "open":
-                    logger.warning(
-                        f"⚡ Circuit breaker '{breaker.name}' is OPEN, rejecting call"
-                    )
-                    raise pybreaker.CircuitBreakerError(
-                        f"Circuit breaker '{breaker.name}' is open"
-                    )
-
-                # Call the async function
-                result = await func(*args, **kwargs)
-
-                # Record success
-                breaker.call_succeeded()
-                logger.debug(f"✅ Circuit breaker '{breaker.name}' call succeeded")
-
-                return result
-
-            except pybreaker.CircuitBreakerError:
-                # Circuit is open, propagate immediately
-                raise
-
-            except Exception as e:
-                # Record failure
-                breaker.call_failed()
-                logger.error(
-                    f"❌ Circuit breaker '{breaker.name}' failure: {e} "
-                    f"(Failures: {breaker.fail_counter}/{breaker.fail_max})"
-                )
-                raise
+            # Use breaker.call() with an async-compatible wrapper
+            return await breaker.call(func, *args, **kwargs)
 
         return wrapper
 
@@ -120,14 +70,7 @@ def async_circuit_breaker(breaker: pybreaker.CircuitBreaker):
 
 
 def sync_circuit_breaker(breaker: pybreaker.CircuitBreaker):
-    """
-    Decorator to apply circuit breaker pattern to sync functions.
-
-    Usage:
-        @sync_circuit_breaker(user_service_breaker)
-        def fetch_user_data(user_id: str):
-            ...
-    """
+    """Decorator for sync functions."""
 
     def decorator(func: Callable):
         @wraps(func)

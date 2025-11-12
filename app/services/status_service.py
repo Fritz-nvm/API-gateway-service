@@ -5,6 +5,7 @@ import json
 import logging
 
 from app.core.config import settings
+from app.core.circuit_breaker import async_circuit_breaker, redis_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class StatusService:
 
     # --- Idempotency Methods (R3.2) ---
 
+    @async_circuit_breaker(redis_breaker)
     async def check_idempotency_key(self, idempotency_key: str) -> Optional[str]:
         """
         Check if an idempotency key exists and return the associated notification_id.
@@ -66,8 +68,9 @@ class StatusService:
             return notification_id
         except Exception as e:
             logger.error(f"❌ Error checking idempotency key: {e}")
-            return None
+            raise  # Re-raise to trigger circuit breaker
 
+    @async_circuit_breaker(redis_breaker)
     async def set_idempotency_key(
         self, idempotency_key: str, notification_id: str
     ) -> bool:
@@ -103,10 +106,11 @@ class StatusService:
             return result
         except Exception as e:
             logger.error(f"❌ Error setting idempotency key: {e}")
-            return False
+            raise  # Re-raise to trigger circuit breaker
 
     # --- Status Tracking Methods (R3.4) ---
 
+    @async_circuit_breaker(redis_breaker)
     async def set_initial_status(self, status_data: Dict[str, Any]) -> bool:
         """
         Stores the initial status (queued) data for a new notification (R3.4).
@@ -141,8 +145,9 @@ class StatusService:
             return True
         except Exception as e:
             logger.error(f"❌ Error setting initial status: {e}")
-            return False
+            raise  # Re-raise to trigger circuit breaker
 
+    @async_circuit_breaker(redis_breaker)
     async def get_status(self, notification_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve notification status from Redis.
@@ -163,8 +168,9 @@ class StatusService:
             return None
         except Exception as e:
             logger.error(f"❌ Error getting status: {e}")
-            return None
+            raise  # Re-raise to trigger circuit breaker
 
+    @async_circuit_breaker(redis_breaker)
     async def update_status(
         self, notification_id: str, new_status: str, error_message: Optional[str] = None
     ) -> bool:
@@ -201,10 +207,11 @@ class StatusService:
             return True
         except Exception as e:
             logger.error(f"❌ Error updating status: {e}")
-            return False
+            raise  # Re-raise to trigger circuit breaker
 
     # --- Utility Methods ---
 
+    @async_circuit_breaker(redis_breaker)
     async def delete_status(self, notification_id: str) -> bool:
         """
         Delete notification status from Redis.
@@ -226,7 +233,7 @@ class StatusService:
             return bool(result)
         except Exception as e:
             logger.error(f"❌ Error deleting status: {e}")
-            return False
+            raise  # Re-raise to trigger circuit breaker
 
     async def close(self):
         """Close Redis connection."""

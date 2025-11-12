@@ -69,9 +69,5 @@ class Settings(BaseSettings):
     CIRCUIT_BREAKER_MAX_FAILURES: int = 5
     CIRCUIT_BREAKER_RESET_TIMEOUT: int = 30
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
 
 settings = Settings()

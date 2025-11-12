@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from enum import Enum
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, HttpUrl
 
 
 class NotificationType(str, Enum):
@@ -12,71 +12,51 @@ class NotificationType(str, Enum):
     PUSH = "push"
 
 
-class Priority(str, Enum):
-    """Defines notification priority levels."""
-
-    LOW = "low"
-    NORMAL = "normal"
-    HIGH = "high"
-
-
-class Recipient(BaseModel):
-    """Recipient information for the notification."""
-
-    user_id: str = Field(..., description="Unique identifier for the user")
-    email: Optional[EmailStr] = Field(
-        None, description="Email address for email notifications"
-    )
-    push_token: Optional[str] = Field(
-        None, description="FCM/push token for push notifications"
-    )
-
-
-class Meta(BaseModel):
-    """Metadata for the notification."""
-
-    priority: Priority = Field(
-        default=Priority.NORMAL, description="Priority level of the notification"
-    )
-    timestamp: Optional[datetime] = Field(
-        default=None,
-        description="Timestamp of the request (auto-generated if not provided)",
-    )
-
-
 class NotificationRequest(BaseModel):
     """
-    Schema for POST /api/v1/notifications/ incoming request.
-    CLIENT ONLY provides: notification_type, template_id, recipient, variables, meta (optional)
-    SERVER generates: request_id, correlation_id, notification_id
+    Incoming notification request schema (aligned with requirements).
     """
 
-    notification_type: NotificationType = Field(
-        ..., description="Channel for notification (email or push)"
-    )
-    template_id: str = Field(..., description="Identifier for the template to use")
-    recipient: Recipient = Field(..., description="Recipient information")
+    notification_type: NotificationType
+    user_id: str = Field(..., description="User UUID")
+    template_code: str = Field(..., description="Template identifier or path")
     variables: Dict[str, Any] = Field(
-        default_factory=dict, description="Variables for template substitution"
+        default_factory=dict, description="Template variables for substitution"
     )
-    meta: Optional[Meta] = Field(
-        default=None, description="Metadata including priority and timestamp"
+    request_id: Optional[str] = Field(
+        None,
+        description="Optional request ID for tracking (auto-generated if not provided)",
+    )
+    priority: int = Field(
+        default=5, ge=1, le=10, description="Priority level: 1 (highest) to 10 (lowest)"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Additional metadata (campaign_id, source, etc.)"
     )
 
-    model_config = {
-        "json_schema_extra": {
+    class Config:
+        json_schema_extra = {
             "example": {
                 "notification_type": "email",
-                "template_id": "welcome_email",
-                "recipient": {"user_id": "user_123", "email": "test@example.com"},
+                "user_id": "550e8400-e29b-41d4-a716-446655440000",
+                "template_code": "welcome_email",
                 "variables": {
                     "name": "John Doe",
-                    "activation_link": "https://example.com/activate/xyz",
+                    "link": "https://example.com/activate",
                 },
-                "meta": {"priority": "normal"},
+                "request_id": "req_123abc",
+                "priority": 5,
+                "metadata": {"campaign_id": "campaign_001", "source": "web"},
             }
         }
-    }
+
+
+class UserData(BaseModel):
+    """User data for template variables (as per requirements)."""
+
+    name: str
+    link: HttpUrl
+    meta: Optional[Dict[str, Any]] = None
 
 
 class QueueMessagePayload(BaseModel):
@@ -92,12 +72,13 @@ class QueueMessagePayload(BaseModel):
 
     # Client-provided fields
     notification_type: NotificationType
-    template_id: str
-    recipient: Recipient
+    user_id: str
+    template_code: str
     variables: Dict[str, Any]
-    meta: Meta
+    priority: int
+    metadata: Optional[Dict[str, Any]] = None
 
-    # Enriched data from services
+    # Enriched data from services (to be filled by worker services)
     template_validated: bool = Field(default=False)
     user_preferences_checked: bool = Field(default=False)
     queued_at: datetime = Field(default_factory=datetime.utcnow)
@@ -137,3 +118,27 @@ class NotificationStatusResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     error_message: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "request_id": "req_12345",
+                "notification_id": "notif_98765",
+                "status": "delivered",
+                "notification_type": "email",
+                "created_at": "2025-11-10T12:34:56Z",
+                "updated_at": "2025-11-10T12:35:30Z",
+                "error_message": None,
+            }
+        }
+    }
+
+
+class NotificationStatus(str, Enum):
+    """Notification status values (as per requirements)."""
+
+    DELIVERED = "delivered"
+    PENDING = "pending"
+    FAILED = "failed"
+    QUEUED = "queued"
+    PROCESSING = "processing"
