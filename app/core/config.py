@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Literal
+from typing import Literal, Optional
 import os
+
 
 # Define the acceptable environments for type checking
 Environment = Literal["development", "staging", "production"]
@@ -56,9 +57,22 @@ class Settings(BaseSettings):
         )
 
     # --- 5. REDIS (Caching & Rate Limiting) ---
+    # --- 5. REDIS (Caching & Rate Limiting) ---
     REDIS_HOST: str
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None
+
+    @property
+    def REDIS_URL(self) -> str:
+        """Full redis URL including optional password for clients that accept a URL."""
+        host = os.getenv("REDIS_HOST", self.REDIS_HOST)
+        port = os.getenv("REDIS_PORT", str(self.REDIS_PORT))
+        db = os.getenv("REDIS_DB", str(self.REDIS_DB))
+        pwd = os.getenv("REDIS_PASSWORD", self.REDIS_PASSWORD)
+        if pwd:
+            return f"redis://:{pwd}@{host}:{port}/{db}"
+        return f"redis://{host}:{port}/{db}"
 
     # Rate Limiting
     RATE_LIMIT_MAX_REQUESTS: int = 100
