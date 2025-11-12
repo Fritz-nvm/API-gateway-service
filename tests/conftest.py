@@ -3,18 +3,29 @@ import asyncio
 import os
 from typing import AsyncGenerator
 
-# Set test environment variables BEFORE importing app modules
+# -------------------------------------------------------------------
+# CRITICAL FIX: Set all required Pydantic environment variables.
+# 1. Added SECRET_KEY (missing from previous run).
+# 2. Mapped RABBITMQ_* names to the expected QUEUE_* names to satisfy
+#    the Pydantic Settings model validation during test collection.
+# -------------------------------------------------------------------
+os.environ["SECRET_KEY"] = "dummy-key-for-testing-only"
+
 os.environ["REDIS_HOST"] = "localhost"
 os.environ["REDIS_PORT"] = "6379"
-os.environ["RABBITMQ_HOST"] = "localhost"
-os.environ["RABBITMQ_PORT"] = "5672"
-os.environ["RABBITMQ_USER"] = "guest"
-os.environ["RABBITMQ_PASS"] = "guest"
+
+# Map RabbitMQ settings to the expected QUEUE_* config names
+os.environ["QUEUE_HOST"] = "localhost"
+os.environ["QUEUE_PORT"] = "5672"
+os.environ["QUEUE_USERNAME"] = "guest"
+os.environ["QUEUE_PASSWORD"] = "guest"
+
 os.environ["ENVIRONMENT"] = "development"
 os.environ["LOG_LEVEL"] = "ERROR"  # Reduce noise in tests
 
 # Try early synchronous Redis init if possible (helps imports that access the client)
 try:
+    # Import AFTER setting environment variables
     from app.services.status_service import status_service
 
     init_result = status_service.initialize_client()
