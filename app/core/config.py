@@ -28,9 +28,11 @@ class Settings(BaseSettings):
     # SECURITY & AUTHENTICATION ---
     SECRET_KEY: str
 
-    # DOWNSTREAM SERVICES ---
-    USER_SERVICE_URL: str
-    TEMPLATE_SERVICE_URL: str
+    # Microservice URLs
+    USER_SERVICE_URL: str = "http://user-service:8001"
+    TEMPLATE_SERVICE_URL: str = "http://template-service:8002"
+    EMAIL_SERVICE_URL: str = "http://email-service:8003"
+    PUSH_SERVICE_URL: str = "http://push-service:8004"
 
     # MESSAGE QUEUE (RabbitMQ) ---
     QUEUE_HOST: str
