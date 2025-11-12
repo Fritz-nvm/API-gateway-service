@@ -203,19 +203,14 @@ jobs:
       security-events: write
 
     steps:
-      - name: 🔑 Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: 🛡️ Run Trivy on Docker image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: "sarif"
           output: "trivy-image-results.sarif"
+          # FIX: Use the dedicated input for GHCR authentication
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📊 Upload Results
         uses: github/codeql-action/upload-sarif@v3
