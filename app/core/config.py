@@ -48,13 +48,42 @@ class Settings(BaseSettings):
 
     @property  # <-- ADDED: Critical for workers connecting to RabbitMQ
     def QUEUE_URL(self) -> str:
-        # Use os.getenv as a fallback for the workers which are separate processes
-        return (
-            f"amqp://{os.getenv('QUEUE_USERNAME', self.QUEUE_USERNAME)}:"
-            f"{os.getenv('QUEUE_PASSWORD', self.QUEUE_PASSWORD)}@"
-            f"{os.getenv('QUEUE_HOST', self.QUEUE_HOST)}:"
-            f"{os.getenv('QUEUE_PORT', str(self.QUEUE_PORT))}/"
-        )
+        """
+        Build a robust AMQP URL.
+
+        - Prefer explicit QUEUE_URL / AMQP_URL env var (providers often supply this).
+        - Tolerate QUEUE_HOST values that already include a scheme, credentials or port.
+        - Prefer environment credentials (QUEUE_USERNAME/QUEUE_PASSWORD) when present.
+        """
+        # 1) explicit URL takes precedence
+        env_url = os.getenv("QUEUE_URL") or os.getenv("AMQP_URL")
+        if env_url:
+            return env_url
+
+        # 2) gather components (env overrides settings)
+        raw_host = os.getenv("QUEUE_HOST", self.QUEUE_HOST)
+        port = os.getenv("QUEUE_PORT", str(self.QUEUE_PORT))
+        user = os.getenv("QUEUE_USERNAME", self.QUEUE_USERNAME)
+        pwd = os.getenv("QUEUE_PASSWORD", self.QUEUE_PASSWORD)
+
+        # 3) strip any leading scheme and any embedded credentials to avoid duplication
+        if raw_host.startswith("amqp://") or raw_host.startswith("amqps://"):
+            raw_host = raw_host.split("://", 1)[1]
+        if "@" in raw_host:
+            raw_host = raw_host.split("@", 1)[1]
+
+        # 4) ensure we have host and port (raw_host may already contain :port)
+        if ":" in raw_host:
+            host_only, host_port = raw_host.rsplit(":", 1)
+        else:
+            host_only, host_port = raw_host, port
+
+        # 5) prefer explicit username/password if provided; otherwise omit credentials
+        creds = ""
+        if user and pwd:
+            creds = f"{user}:{pwd}@"
+
+        return f"amqp://{creds}{host_only}:{host_port}/"
 
     # --- 5. REDIS (Caching & Rate Limiting) ---
     REDIS_HOST: str
