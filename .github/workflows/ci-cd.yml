@@ -10,7 +10,7 @@ on:
 env:
   PYTHON_VERSION: "3.11"
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ toLower(github.repository) }}
 
 jobs:
   lint:
@@ -211,7 +211,7 @@ jobs:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: "sarif"
           output: "trivy-image-results.sarif"
-          # FIX: Use the dedicated input for GHCR authentication
+          # Use the correct input name for GHCR authentication
           github-pat: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📊 Upload Results

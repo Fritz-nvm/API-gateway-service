@@ -57,7 +57,6 @@ class Settings(BaseSettings):
         )
 
     # --- 5. REDIS (Caching & Rate Limiting) ---
-    # --- 5. REDIS (Caching & Rate Limiting) ---
     REDIS_HOST: str
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
@@ -65,11 +64,19 @@ class Settings(BaseSettings):
 
     @property
     def REDIS_URL(self) -> str:
-        """Full redis URL including optional password for clients that accept a URL."""
+        """Resolve Redis URL. Prefer explicit REDIS_URL/REDIS_URI env var, otherwise build from parts."""
+        env_url = os.getenv("REDIS_URL") or os.getenv("REDIS_URI")
+        if env_url:
+            return env_url
+
         host = os.getenv("REDIS_HOST", self.REDIS_HOST)
         port = os.getenv("REDIS_PORT", str(self.REDIS_PORT))
         db = os.getenv("REDIS_DB", str(self.REDIS_DB))
-        pwd = os.getenv("REDIS_PASSWORD", self.REDIS_PASSWORD)
+        pwd = (
+            os.getenv("REDIS_PASSWORD")
+            or os.getenv("REDIS_PASS")
+            or self.REDIS_PASSWORD
+        )
         if pwd:
             return f"redis://:{pwd}@{host}:{port}/{db}"
         return f"redis://{host}:{port}/{db}"
