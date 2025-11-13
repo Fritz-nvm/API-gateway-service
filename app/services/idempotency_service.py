@@ -1,6 +1,7 @@
 import redis.asyncio as redis
 from typing import Optional, Tuple
 from app.core.config import settings
+import os
 
 # Note: We assume the Redis client will be connected during app startup.
 
@@ -15,13 +16,36 @@ class IdempotencyService:
         self.ttl = settings.IDEMPOTENCY_WINDOW_SECONDS
 
     def initialize_client(self):
-        """Initializes the Redis client for use by this service."""
+        """Initializes the Redis client for use by this service.
+
+        Prefer a full REDIS_URL (handles auth). Fall back to host/port/db.
+        """
         if not self.redis_client:
+            # prefer explicit REDIS_URL if provided (handles password)
+            url = getattr(settings, "REDIS_URL", None)
+            if not url:
+                host = os.getenv("REDIS_HOST", settings.REDIS_HOST)
+                port = os.getenv("REDIS_PORT", str(settings.REDIS_PORT))
+                db = os.getenv("REDIS_DB", str(settings.REDIS_DB))
+                pwd = (
+                    os.getenv("REDIS_PASSWORD")
+                    or os.getenv("REDIS_PASS")
+                    or settings.REDIS_PASSWORD
+                )
+                if pwd:
+                    url = f"redis://:{pwd}@{host}:{port}/{db}"
+                else:
+                    url = f"redis://{host}:{port}/{db}"
+
             self.redis_client = redis.from_url(
-                f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
+                url,
                 encoding="utf-8",
                 decode_responses=True,
             )
+
+    def set_client(self, client: redis.Redis):
+        """Attach an already-initialized Redis client (useful to share a single connection)."""
+        self.redis_client = client
 
     def get_client(self) -> redis.Redis:
         """Returns the initialized Redis client instance."""
